@@ -5,6 +5,7 @@ import matplotlib
 from matplotlib import animation, rc
 from customEnv import domainRandomize
 import argparse
+import os
 
 def test(args):
     env_name, randomize = args.env, args.randomize
@@ -51,17 +52,26 @@ def test(args):
                         device=device)
     else:
         raise NotImplementedError
-
-    agent.policy.load_state_dict(torch.load('save/policy_%s.pth'%env_name, map_location=lambda storage, loc: storage))
+    
+    if os.path.isfile('save/policy_%s_best.pth'%env_name):
+        agent.policy.load_state_dict(torch.load('save/policy_%s_best.pth'%env_name, map_location=lambda storage, loc: storage))
+    elif os.path.isfile('save/policy_%s.pth'%env_name):
+        agent.policy.load_state_dict(torch.load('save/policy_%s.pth'%env_name, map_location=lambda storage, loc: storage))
+    else:
+        raise "No pth file exist"
 
     obs = envs.reset()
     done = False
     count = 0
     while not done:
         envs.render()
-        obs_input = torch.from_numpy(obs).unsqueeze(0).float().to(device)
-        action = agent.policy.act(obs_input)['a'].cpu().numpy()
-        obs, _, is_done, _ = envs.step(int(action))
+        if "CartPole" in env_name: 
+            obs_input = torch.from_numpy(obs).unsqueeze(0).float().to(device)
+            action = int(agent.policy.act(obs_input)['a'].cpu().numpy())
+        elif "Pendulum" in env_name:
+            obs_input = torch.from_numpy(obs).float().to(device)
+            action = agent.policy.act(obs_input)['a'].cpu().numpy()
+        obs, _, is_done, _ = envs.step(action)
         count += 1
         if is_done:
             print("reward :", count)

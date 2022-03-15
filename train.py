@@ -19,6 +19,9 @@ from datetime import datetime
 
 def train(episode,args):
     env_name, randomize = args.env, args.randomize
+
+    if not os.path.isdir('save'):
+        os.mkdir('save') 
     
     writer = None
     if args.tb_log:
@@ -146,19 +149,15 @@ def train(episode,args):
             # writer.add_scalars('loss', {'loss_p': np.mean(loss_storage['p']),
             #                             'loss_v': np.mean(loss_storage['v']),
             #                             'loss_ent': np.mean(loss_storage['ent'])}, i_episode)
-    
+        
         if i_episode % 100 == 0:
             print('\rEpisode {}\tAverage Score: {:.2f}'.format(i_episode, np.mean(scores_window)))
             print(total_rewards)
-        if np.mean(scores_window)>=goal_score and np.mean(scores_window)>=best_score:
-            if not os.path.isdir('save'):
-                os.mkdir('save')           
-            torch.save(agent.policy.state_dict(), "policy_%s.pth"%env_name)
-            best_score = np.mean(scores_window)
+            torch.save(agent.policy.state_dict(), "save/policy_%s.pth"%env_name)
 
-    if not os.path.isdir('save'):
-        os.mkdir('save')
-    torch.save(agent.policy.state_dict(), "save/policy_%s.pth"%env_name)
+        if np.mean(scores_window)>=goal_score and np.mean(scores_window)>=best_score:    
+            torch.save(agent.policy.state_dict(), "save/policy_%s_best.pth"%env_name)
+            best_score = np.mean(scores_window)
 
     return mean_rewards, loss_storage
 
