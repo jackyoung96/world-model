@@ -47,7 +47,8 @@ def collect_trajectories(envs, policy, rollout_length=200):
     log_probs_old = torch.stack(log_probs_old).view(-1,)   
     states = torch.stack(states)
     states = states.view(-1,envs.observation_space.shape[0])
-    actions = torch.tensor(actions, dtype=torch.long, device=device).view(-1,)
+    actions_numpy = np.concatenate([a[None,:] for a in actions], axis=0)
+    actions = torch.tensor(actions_numpy, dtype=torch.long, device=device).view(-1,)
     
     obs = torch.from_numpy(obs).float().to(device)
     traj_info_last = policy.act(obs)

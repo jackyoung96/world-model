@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.distributions import Categorical, MultivariateNormal
+from torch.distributions import Categorical, Normal
+import copy
 
 
 def layer_init(layer, scale=1.0):
@@ -12,7 +13,7 @@ def layer_init(layer, scale=1.0):
 
 class FCNet(nn.Module):
     """Fully Connected Model."""
-    def __init__(self, state_size, seed, hidden_layers, use_reset, act_fnc=F.relu, lin_output=False):
+    def __init__(self, state_size, seed, hidden_layers, use_reset, act_fnc=F.relu):
         """Initialize parameters and build model.
         Params
         ======
@@ -31,14 +32,10 @@ class FCNet(nn.Module):
             self.layers = nn.ModuleList([nn.Linear(in_put, out_put) for in_put, out_put in zip(dims[:-1], dims[1:])])
         self.act_fuc = act_fnc 
         self.feature_dim = dims[-1]
-        self.lin_output = lin_output
 
     def forward(self, x):
-        for layer in self.layers[:-1]:
+        for layer in self.layers:
             x = self.act_fuc(layer(x))
-        x = self.layers[-1](x)
-        if not self.lin_output:
-            x = self.act_fun(x)
 
         return x
     
@@ -120,7 +117,7 @@ class PolicyDiscrete(nn.Module):
 
 class PolicyContinuous(nn.Module):
     """Actor Critic Model (shared weights)"""
-    def __init__(self, state_size, action_size, seed, main_net):
+    def __init__(self, state_size, action_size, seed, main_net1, main_net2):
         """Initialize parameters and build model.
         Params
         ======
@@ -132,24 +129,28 @@ class PolicyContinuous(nn.Module):
         super(PolicyContinuous, self).__init__()
         self.seed = torch.manual_seed(seed)
 
-        self.main_net = main_net
+        self.main_net_actor = main_net1
+        self.main_net_critic = main_net2
 
-        self.fc_actor = layer_init(nn.Linear(main_net.feature_dim, action_size), 1e-3)
-        self.fc_critic = layer_init(nn.Linear(main_net.feature_dim, 1), 1e-3)
-
-        self.cov_var = torch.full(size=(action_size,), fill_value=0.5)
-        self.cov_mat = torch.diag(self.cov_var)
+        self.fc_actor_mean = nn.Linear(main_net1.feature_dim, action_size)
+        self.fc_actor_sigma = nn.Linear(main_net1.feature_dim, action_size)
+        self.fc_critic = nn.Linear(main_net1.feature_dim, 1)
 
     def forward(self, state):
-        x = self.main_net(state)
-        pi_a = self.fc_actor(x)
-        prob = F.softmax(pi_a, dim=1)
-        v = self.fc_critic(x)
-        return prob, v        
+        x_a = self.main_net_actor(state)
+        
+        pi_mean = self.fc_actor_mean(x_a)
+        pi_sigma = F.softplus(self.fc_actor_sigma(x_a))
+        if self.main_net_critic is not None:
+            x_c = self.main_net_critic(state)
+            v = self.fc_critic(x_c)
+        else:
+            v = self.fc_critic(x_a)
+        return (pi_mean,pi_sigma), v        
         
     def act(self, state, action=None):
-        mean, v = self.forward(state)
-        dist = MultivariateNormal(mean, self.cov_mat)
+        pi_a, v = self.forward(state)
+        dist = Normal(*pi_a)
         if action is None:
             action = dist.sample()
         else:

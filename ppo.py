@@ -50,13 +50,19 @@ class PPOContinuousAgent:
                  seed,
                  hidden_layers,
                  lr_policy, 
-                 use_reset, 
+                 use_reset,
+                 use_common, 
                  device
                 ):
 
         #self.main_net = ConvNet(state_size, feature_dim, seed, use_reset, input_channel).to(device)
-        self.main_net = FCNet(state_size, seed, hidden_layers=[64,64], use_reset=True, act_fnc=F.relu, lin_output=True).to(device)
-        self.policy = PolicyContinuous(state_size, action_size, seed, self.main_net).to(device)
+        if use_common:
+            self.main_net1 = FCNet(state_size, seed, hidden_layers=hidden_layers, use_reset=use_reset, act_fnc=nn.ReLU()).to(device)
+            self.main_net2 = None
+        else:
+            self.main_net1 = FCNet(state_size, seed, hidden_layers=hidden_layers, use_reset=use_reset, act_fnc=nn.ReLU()).to(device)
+            self.main_net2 = FCNet(state_size, seed, hidden_layers=hidden_layers, use_reset=use_reset, act_fnc=nn.ReLU()).to(device)
+        self.policy = PolicyContinuous(state_size, action_size, seed, self.main_net1, self.main_net2).to(device)
         self.optimizer = optim.Adam(self.policy.parameters(), lr=lr_policy)
         self.device = device
 
@@ -69,12 +75,14 @@ class PPOContinuousAgent:
         surr2 = torch.clamp(ratio, 1.0 - cliprange, 1.0 + cliprange) * advantages
         policy_loss = -torch.min(surr1, surr2).mean()
         
-        value_loss = 0.5*(returns - traj_info['v']).pow(2).mean()
+        value_loss = F.smooth_l1_loss(returns, traj_info['v'])
+        # value_loss = 0.5*(returns - traj_info['v']).pow(2).mean()
         entropy = traj_info['ent'].mean()
 
         self.optimizer.zero_grad()
-        (policy_loss + value_loss - beta*entropy).backward()
-        nn.utils.clip_grad_norm_(self.policy.parameters(), 5)
+        # (policy_loss + value_loss - beta*entropy).backward()
+        (policy_loss + value_loss).backward()
+        nn.utils.clip_grad_norm_(self.policy.parameters(), 0.5)
         self.optimizer.step()
 
         return policy_loss.data.cpu().numpy(), value_loss.data.cpu().numpy(), entropy.data.cpu().numpy()
