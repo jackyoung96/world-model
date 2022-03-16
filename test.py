@@ -62,19 +62,20 @@ def test(args):
 
     obs = envs.reset()
     done = False
-    count = 0
+    total_rew = 0
     while not done:
-        envs.render()
+        if args.render:
+            envs.render()
         if "CartPole" in env_name: 
             obs_input = torch.from_numpy(obs).unsqueeze(0).float().to(device)
             action = int(agent.policy.act(obs_input)['a'].cpu().numpy())
         elif "Pendulum" in env_name:
             obs_input = torch.from_numpy(obs).float().to(device)
             action = agent.policy.act(obs_input)['a'].cpu().numpy()
-        obs, _, is_done, _ = envs.step(action)
-        count += 1
+        obs, rew, is_done, _ = envs.step(action)
+        total_rew += rew
         if is_done:
-            print("reward :", count)
+            print("reward :", total_rew)
             break
     
     envs.close()
@@ -82,6 +83,7 @@ def test(args):
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', required=True, choices=['CartPole-v0','CartPole-v1','Pendulum-v0'])
+    parser.add_argument('--render',action='store_true', help="Rendering")
     parser.add_argument('--randomize',action='store_true', help="Domain randomize")
     args = parser.parse_args()
     test(args)

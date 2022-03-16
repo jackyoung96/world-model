@@ -23,7 +23,6 @@ def collect_trajectories(envs, policy, rollout_length=200):
     obs = envs.reset()
     
     for t in range(rollout_length):
-        
         batch_input = torch.from_numpy(obs).float().to(device)
         traj_info = policy.act(batch_input)
 

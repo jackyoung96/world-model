@@ -52,18 +52,20 @@ def train(episode,args):
     gae_lambda = 0.95
     use_gae = True
     beta = .01
-    cliprange = 0.2
+    cliprange = 0.1
     best_score = -np.inf
     goal_score = 495.0
 
     nenvs = 8
-    rollout_length = 500
+    rollout_length = 200
     minibatches = 10*8
     # Calculate the batch_size
-    nbatch = 128
-    optimization_epochs = 10
+    nbatch = nenvs * rollout_length
+    # nbatch = 128
+    optimization_epochs = 4
     
     device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print("Device:",device)
     
     envs = domainRandeEnv(env_name, nenvs, seed=1234, dyn_range=dyn_range,default_ratio=default_ratio)
 
@@ -168,4 +170,4 @@ if __name__=='__main__':
     parser.add_argument('--randomize',action='store_true', help="Domain randomize")
     parser.add_argument('--tb_log', action='store_true', help="Tensorboard logging")
     args = parser.parse_args()
-    train(1000, args)
+    train(20000, args)

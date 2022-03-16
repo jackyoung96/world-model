@@ -75,13 +75,13 @@ class PPOContinuousAgent:
         surr2 = torch.clamp(ratio, 1.0 - cliprange, 1.0 + cliprange) * advantages
         policy_loss = -torch.min(surr1, surr2).mean()
         
-        value_loss = F.smooth_l1_loss(returns, traj_info['v'])
+        value_loss = F.smooth_l1_loss(returns, traj_info['v'], reduction='mean')
         # value_loss = 0.5*(returns - traj_info['v']).pow(2).mean()
         entropy = traj_info['ent'].mean()
 
         self.optimizer.zero_grad()
-        # (policy_loss + value_loss - beta*entropy).backward()
-        (policy_loss + value_loss).backward()
+        (policy_loss + value_loss - beta*entropy).backward()
+        # (policy_loss + value_loss).backward()
         nn.utils.clip_grad_norm_(self.policy.parameters(), 0.5)
         self.optimizer.step()
 

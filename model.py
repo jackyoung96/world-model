@@ -141,6 +141,7 @@ class PolicyContinuous(nn.Module):
         
         pi_mean = self.fc_actor_mean(x_a)
         pi_sigma = F.softplus(self.fc_actor_sigma(x_a))
+
         if self.main_net_critic is not None:
             x_c = self.main_net_critic(state)
             v = self.fc_critic(x_c)
