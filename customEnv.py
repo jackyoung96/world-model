@@ -238,11 +238,11 @@ class domainRandeEnv(parallelEnv):
                 default_ratio=0.1
                 ):
         
+        self.env_name = env_name
         self.default_ratio = default_ratio
         env_fns = [ gym.make(env_name) for _ in range(n) ]
         for env_fn in env_fns:
             domainRandomize(env=env_fn.env, dyn_range=dyn_range, default_ratio=default_ratio)
-
         if seed is not None:
             for i,e in enumerate(env_fns):
                 e.seed(i+seed)
@@ -266,3 +266,16 @@ class domainRandeEnv(parallelEnv):
         self.remotes[0].send(('get_spaces', None))
         observation_space, action_space = self.remotes[0].recv()
         VecEnv.__init__(self, len(env_fns), observation_space, action_space)
+
+    def step(self, action):
+        """
+        Reward normalization
+        """
+        if "CartPole" in self.env_name:
+            return super().step(action)
+        elif "Pendulum" in self.env_name:
+            obs, reward, is_done, info = super().step(action)
+            reward = (reward + 8.1) / 8.1
+            return obs, reward, is_done, info
+        else:
+            raise NotImplementedError

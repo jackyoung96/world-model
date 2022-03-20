@@ -6,6 +6,8 @@ from matplotlib import animation, rc
 from customEnv import domainRandomize
 import argparse
 import os
+from utils import save_frames_as_gif
+from pyvirtualdisplay import Display
 
 def test(args):
     env_name, randomize = args.env, args.randomize
@@ -48,7 +50,7 @@ def test(args):
                         hidden_layers=[128,128],
                         lr_policy=1e-4, 
                         use_reset=False,
-                        use_common=False,
+                        use_common=True,
                         device=device)
     else:
         raise NotImplementedError
@@ -63,27 +65,46 @@ def test(args):
     obs = envs.reset()
     done = False
     total_rew = 0
-    while not done:
-        if args.render:
-            envs.render()
-        if "CartPole" in env_name: 
-            obs_input = torch.from_numpy(obs).unsqueeze(0).float().to(device)
-            action = int(agent.policy.act(obs_input)['a'].cpu().numpy())
-        elif "Pendulum" in env_name:
-            obs_input = torch.from_numpy(obs).float().to(device)
-            action = agent.policy.act(obs_input)['a'].cpu().numpy()
-        obs, rew, is_done, _ = envs.step(action)
-        total_rew += rew
-        if is_done:
-            print("reward :", total_rew)
-            break
-    
+    frames = []
+    agent.policy.eval()
+
+    with torch.no_grad():
+        max_episode_len = 200
+        for _ in range(max_episode_len):
+            if args.render:
+                envs.render()
+            if args.record:
+                frames.append(envs.render(mode="rgb_array"))
+            if "CartPole" in env_name: 
+                obs_input = torch.from_numpy(obs).unsqueeze(0).float().to(device)
+                action = int(agent.policy.act(obs_input)['a'].cpu().numpy())
+            elif "Pendulum" in env_name:
+                obs_input = torch.from_numpy(obs).float().to(device).view(1,-1)
+                action = agent.policy.act(obs_input)['a'].cpu().numpy()
+            obs, rew, is_done, _ = envs.step(action)
+            total_rew += rew
+            if is_done:
+                print("reward :", total_rew)
+                break
+
+    if args.record:
+        if not os.path.isdir("gif"):
+            os.mkdir("gif")
+        num = 0
+        for file in os.listdir("gif"):
+            if args.env in file:
+                num = max(num,int(file.strip(".gif").split("_")[-1]) + 1)
+        
+        save_frames_as_gif(frames, path="gif", filename="%s_%03d.gif"%(args.env, num))
+
     envs.close()
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', required=True, choices=['CartPole-v0','CartPole-v1','Pendulum-v0'])
     parser.add_argument('--render',action='store_true', help="Rendering")
+    parser.add_argument('--record',action='store_true', help="record as gif")
     parser.add_argument('--randomize',action='store_true', help="Domain randomize")
     args = parser.parse_args()
-    test(args)
+    with Display(visible=False, size=(100, 60)) as disp:
+        test(args)

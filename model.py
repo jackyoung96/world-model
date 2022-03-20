@@ -1,8 +1,11 @@
+from random import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Categorical, Normal
 import copy
+import random
+import numpy as np
 
 
 def layer_init(layer, scale=1.0):
@@ -132,15 +135,20 @@ class PolicyContinuous(nn.Module):
         self.main_net_actor = main_net1
         self.main_net_critic = main_net2
 
-        self.fc_actor_mean = nn.Linear(main_net1.feature_dim, action_size)
-        self.fc_actor_sigma = nn.Linear(main_net1.feature_dim, action_size)
+        self.fc_actor_mean = nn.Sequential(nn.Linear(main_net1.feature_dim, action_size),
+                                            # nn.Tanh(),
+                                            # nn.Mul(2)
+                                            )
+        self.fc_actor_sigma = nn.Sequential(nn.Linear(main_net1.feature_dim, action_size),
+                                            nn.Softplus()
+                                            )
         self.fc_critic = nn.Linear(main_net1.feature_dim, 1)
 
     def forward(self, state):
         x_a = self.main_net_actor(state)
         
         pi_mean = self.fc_actor_mean(x_a)
-        pi_sigma = F.softplus(self.fc_actor_sigma(x_a)) + 1e-3
+        pi_sigma = self.fc_actor_sigma(x_a) + 1e-3
 
         if self.main_net_critic is not None:
             x_c = self.main_net_critic(state)
@@ -151,12 +159,17 @@ class PolicyContinuous(nn.Module):
         
     def act(self, state, action=None):
         pi_a, v = self.forward(state)
-        dist = Normal(*pi_a)
+        dist = Normal(pi_a[0].view(-1,), pi_a[1].view(-1,))        
         if action is None:
             action = dist.sample()
-        else:
-            action = torch.unsqueeze(action, -1)
+
+        # action = torch.clip(action, -2., 2.)
         log_prob = dist.log_prob(action)
+        action = torch.unsqueeze(action, -1)
+        # for mean,std,a,logprob in zip(pi_a[0], pi_a[1], action, log_prob):
+        #     print('-------------')
+        #     print(mean,std,a,logprob)
+        #     break
         entropy = dist.entropy()
         return {'a': action,
                 'log_pi_a': log_prob,
