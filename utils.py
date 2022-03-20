@@ -5,8 +5,6 @@ import matplotlib.pyplot as plt
 import os
 import gym
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
 def collect_trajectories(envs, agent, rollout_length=200):
     """collect trajectories for a parallelized parallelEnv object
     
@@ -21,6 +19,7 @@ def collect_trajectories(envs, agent, rollout_length=200):
     vals_last (list,np.array):  (n,)                 --> for advs
     """
     n=len(envs.ps)         # number of parallel instances
+    device = agent.device
 
     log_probs_old, states, actions, rewards, values, dones = [],[],[],[],[],[]
 
@@ -78,6 +77,7 @@ def collect_trajectories_multiagents(envs, agents, rollout_length=200):
     vals_last (list,np.array):  (n,)                 --> for advs
     """
     n=len(envs.ps)         # number of parallel instances
+    device = agents.agents[0].device
 
     log_probs_old, states, actions, rewards, values, dones = [],[],[],[],[],[]
 
