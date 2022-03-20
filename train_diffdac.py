@@ -64,7 +64,7 @@ def train(args):
     # nbatch = 128
     optimization_epochs = 10
     
-    device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device=torch.device("cuda:%d"%args.gpu if torch.cuda.is_available() else "cpu")
     print("Device:",device)
     
     envs = domainRandeEnv(env_name, nenvs, seed=1234, dyn_range=dyn_range,default_ratio=default_ratio)
@@ -110,7 +110,7 @@ def train(args):
     else:
         raise NotImplementedError
     # print("------------------")
-    summary(agents.agents[0].policy, envs.observation_space.shape)
+    # summary(agents.agents[0].policy, envs.observation_space.shape, device=device)
     # print("------------------")
 
     # keep track of progress
@@ -207,5 +207,6 @@ if __name__=='__main__':
     parser.add_argument('--randomize',action='store_true', help="Domain randomize")
     parser.add_argument('--tb_log', action='store_true', help="Tensorboard logging")
     parser.add_argument('--epoch', default='5000', type=int, help="Total epoch")
+    parser.add_argument('--gpu', default='0', type=int, help="gpu number")
     args = parser.parse_args()
     train(args)
