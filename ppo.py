@@ -67,16 +67,11 @@ class PPOContinuousAgent:
             main_net2 = FCNet(state_size, seed, hidden_layers=hidden_layers, use_reset=use_reset, act_fnc=nn.ReLU()).to(device)
         self.policy = PolicyContinuous(state_size, action_size, seed, main_net1, main_net2).to(device)
         self.optimizer = optim.Adam(self.policy.parameters(), lr=lr_policy)
-        # self.optim_actor = optim.Adam([{'params': self.policy.main_net_actor.parameters(), 'weight_decay': 0},
-        #                                 {'params': self.policy.fc_actor_mean.parameters(), 'weight_decay': 0},
-        #                                 {'params': self.policy.fc_actor_sigma.parameters(), 'weight_decay': 0}],
-        #                                 lr = lr_policy)
-        # self.optim_value = optim.Adam([{'params': self.policy.main_net_critic.parameters(), 'weight_decay': 0},
-        #                                 {'params': self.policy.fc_critic.parameters(), 'weight_decay': 0}],
-        #                                 lr = 2*lr_policy)
         self.device = device
 
     def update(self, log_probs_old, states, actions, returns, advantages, cliprange=0.1, beta=0.01):
+        # print(log_probs_old.shape, states.shape, actions.shape, returns.shape, advantages.shape)
+        
         traj_info = self.policy.act(states, actions)
 
         ratio = torch.exp(traj_info['log_pi_a'] - log_probs_old)
@@ -84,18 +79,10 @@ class PPOContinuousAgent:
         surr2 = torch.clamp(ratio, 1.0 - cliprange, 1.0 + cliprange) * advantages
         policy_loss = -torch.min(surr1, surr2).mean()
         
-        # self.optim_actor.zero_grad()
-        # policy_loss.backward()
-        # self.optim_actor.step()
-
         # value_loss = 0.5*(returns - traj_info['v']).pow(2).mean()
-        
         value_loss = F.mse_loss(returns, traj_info['v'])
         entropy = - beta*traj_info['ent'].mean()
 
-        # self.optim_value.zero_grad()
-        # value_loss.backward()
-        # self.optim_value.step()
 
         loss = policy_loss + value_loss + entropy
         # loss = value_loss
@@ -127,23 +114,25 @@ class vecAgents:
         self.graph = graph
         if graph is None:
             # Temporary fully connected networks
-            self.graph = np.eye(nenvs,nenvs) / nenvs
+            self.graph = np.ones((nenvs,nenvs)) / (nenvs)
 
     def update(self, log_probs_old, states, actions, returns, advantages, cliprange=0.1, beta=0.01):
-        policy_loss, value_loss, entropy = [],[],[]
+        policy_loss, value_loss, entropy = np.zeros((len(self.agents),)),\
+                                            np.zeros((len(self.agents),)),\
+                                            np.zeros((len(self.agents),))
 
         for i,p in enumerate(self.agents):
-            p_loss, v_loss, ent = p.update(log_probs_old[:,i:i+1], \
-                                            states[:,i:i+1], \
-                                            actions[:,i:i+1], \
-                                            returns[:,i], \
-                                            advantages[:,i:i+1], \
+            p_loss, v_loss, ent = p.update(log_probs_old[:,i], 
+                                            states[:,i], 
+                                            actions[:,i], 
+                                            returns[:,i], 
+                                            advantages[:,i], 
                                             cliprange, beta)
-            policy_loss.append(p_loss)
-            value_loss.append(v_loss)
-            entropy.append(ent)
+            policy_loss[i] = p_loss
+            value_loss[i] = v_loss
+            entropy[i] = ent
         
-        # Diffusion
+        # # Diffusion
         for i,p in enumerate(self.agents):
             for param, *neighbors in zip(p.policy.parameters(), *map(lambda x: x.policy.parameters(), self.agents)):
                 param.data.copy_(sum([self.graph[i][j]*neighbor.data for j,neighbor in enumerate(neighbors)]))
@@ -152,12 +141,18 @@ class vecAgents:
     
     def act(self, state, action=None):
         actions, logprobs, entropys, vs = [],[],[],[]
+
         for i,p in enumerate(self.agents):
-            a,log_pi_a,ent,v = p.act(state[i:i+1]).values()
+            if action is None:
+                a,log_pi_a,ent,v = p.act(state[i:i+1]).values()
+            else:
+                a,log_pi_a,ent,v = p.act(state[i:i+1], action[i:i+1]).values()
             actions.append(a)
             logprobs.append(log_pi_a)
             entropys.append(ent)
             vs.append(v)
+        print(actions,logprobs,entropys,vs)
+        print('---')
 
         return {'a': torch.concat(actions),
                 'log_pi_a': torch.concat(logprobs),

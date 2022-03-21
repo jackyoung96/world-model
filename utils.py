@@ -108,9 +108,9 @@ def collect_trajectories_multiagents(envs, agents, rollout_length=200):
     states = torch.stack(states)
     actions_numpy = np.concatenate([a[None,:] for a in actions], axis=0)
     if isinstance(envs.action_space, gym.spaces.Box):
-        actions = torch.tensor(actions_numpy, dtype=torch.float32, device=device)
+        actions = torch.tensor(actions_numpy, dtype=torch.float32, device=device).view(rollout_length,-1)
     elif isinstance(envs.action_space, gym.spaces.Discrete):
-        actions = torch.tensor(actions_numpy, dtype=torch.long, device=device)
+        actions = torch.tensor(actions_numpy, dtype=torch.long, device=device).view(rollout_length,-1)
 
     obs = torch.from_numpy(obs).float().to(device)
     traj_info_last = agents.act(obs)

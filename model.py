@@ -158,6 +158,10 @@ class PolicyContinuous(nn.Module):
         return (pi_mean,pi_sigma), v        
         
     def act(self, state, action=None):
+        # if action is not None:
+        #     print(state.shape, action.shape)
+        # else:
+        #     print(state.shape)
         pi_a, v = self.forward(state)
         dist = Normal(pi_a[0].view(-1,), pi_a[1].view(-1,))        
         if action is None:
