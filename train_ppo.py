@@ -151,7 +151,7 @@ def train(args):
             writer.add_scalar('loss/loss_p', np.mean(loss_storage['p']), i_episode)
             writer.add_scalar('loss/loss_v', np.mean(loss_storage['v']), i_episode)
             writer.add_scalar('loss/loss_ent', np.mean(loss_storage['ent']), i_episode)
-            writer.add_scalar('reward', scores_window[-1], i_episode)
+            writer.add_scalar('rewards', scores_window[-1], i_episode)
             # writer.add_scalars('loss', {'loss_p': np.mean(loss_storage['p']),
             #                             'loss_v': np.mean(loss_storage['v']),
             #                             'loss_ent': np.mean(loss_storage['ent'])}, i_episode)

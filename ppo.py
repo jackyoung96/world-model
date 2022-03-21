@@ -156,8 +156,6 @@ class vecAgents:
             logprobs.append(log_pi_a)
             entropys.append(ent)
             vs.append(v)
-        # print(actions,logprobs,entropys,vs)
-        # print('---')
 
         return {'a': torch.concat(actions),
                 'log_pi_a': torch.concat(logprobs),
