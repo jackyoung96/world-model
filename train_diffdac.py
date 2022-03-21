@@ -128,7 +128,7 @@ def train(args):
                 if t == rollout_length - 1:
                     returns[t] = rewards[t] + gamma * (1-dones[t]) * vals_last
                 else:
-                    returns[t] = rewards[t] + gamma * (1-dones[t]) * returns[t+1]
+                    returns[t] = rewards[t] + gamma * (1-dones[t]) * values[t+1]
                 advantages[t] = returns[t] - values[t]
                 
         else:

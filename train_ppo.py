@@ -56,7 +56,7 @@ def train(args):
     elif "Pendulum" in env_name:
         goal_score = 180.0
 
-    nenvs = 25
+    nenvs = 2
     rollout_length = 200
     minibatches = 32
     # Calculate the batch_size

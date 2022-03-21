@@ -35,6 +35,11 @@ class PPODiscreteAgent:
         value_loss = 0.5*(returns - traj_info['v']).pow(2).mean()
         entropy = traj_info['ent'].mean()
 
+        print("logprob",log_probs_old[:2], traj_info['log_pi_a'][:2], '\n',\
+                "action",actions[:2], "\n",\
+                "value",returns[:2], traj_info['v'][:2], '\n',\
+                "adv",advantages[:2])
+
         self.optimizer.zero_grad()
         (policy_loss + value_loss - beta*entropy).backward()
         nn.utils.clip_grad_norm_(self.policy.parameters(), 5)
@@ -87,10 +92,10 @@ class PPOContinuousAgent:
         loss = policy_loss + value_loss + entropy
         # loss = value_loss
 
-        # print("logprob",log_probs_old[:2], traj_info['log_pi_a'][:2], '\n',\
-        #         "action",actions[:2], "\n",\
-        #         "value",returns[:2], traj_info['v'][:2], '\n',\
-        #         "adv",advantages[:2])
+        print("logprob",log_probs_old[:2], traj_info['log_pi_a'][:2], '\n',\
+                "action",actions[:2], "\n",\
+                "value",returns[:2], traj_info['v'][:2], '\n',\
+                "adv",advantages[:2])
 
 
         self.optimizer.zero_grad()
@@ -133,9 +138,9 @@ class vecAgents:
             entropy[i] = ent
         
         # # Diffusion
-        for i,p in enumerate(self.agents):
-            for param, *neighbors in zip(p.policy.parameters(), *map(lambda x: x.policy.parameters(), self.agents)):
-                param.data.copy_(sum([self.graph[i][j]*neighbor.data for j,neighbor in enumerate(neighbors)]))
+        # for i,p in enumerate(self.agents):
+        #     for param, *neighbors in zip(p.policy.parameters(), *map(lambda x: x.policy.parameters(), self.agents)):
+        #         param.data.copy_(sum([self.graph[i][j]*neighbor.data for j,neighbor in enumerate(neighbors)]))
         
         return policy_loss, value_loss, entropy
     
@@ -151,8 +156,8 @@ class vecAgents:
             logprobs.append(log_pi_a)
             entropys.append(ent)
             vs.append(v)
-        print(actions,logprobs,entropys,vs)
-        print('---')
+        # print(actions,logprobs,entropys,vs)
+        # print('---')
 
         return {'a': torch.concat(actions),
                 'log_pi_a': torch.concat(logprobs),
