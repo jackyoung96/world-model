@@ -4,6 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+import torch.multiprocessing as mp
+
 from model import FCNet, ConvNet, PolicyContinuous, PolicyDiscrete
 
 class PPODiscreteAgent:
@@ -35,10 +37,10 @@ class PPODiscreteAgent:
         value_loss = 0.5*(returns - traj_info['v']).pow(2).mean()
         entropy = traj_info['ent'].mean()
 
-        print("logprob",log_probs_old[:2], traj_info['log_pi_a'][:2], '\n',\
-                "action",actions[:2], "\n",\
-                "value",returns[:2], traj_info['v'][:2], '\n',\
-                "adv",advantages[:2])
+        # print("logprob",log_probs_old[:2], traj_info['log_pi_a'][:2], '\n',\
+        #         "action",actions[:2], "\n",\
+        #         "value",returns[:2], traj_info['v'][:2], '\n',\
+        #         "adv",advantages[:2])
 
         self.optimizer.zero_grad()
         (policy_loss + value_loss - beta*entropy).backward()
@@ -92,10 +94,10 @@ class PPOContinuousAgent:
         loss = policy_loss + value_loss + entropy
         # loss = value_loss
 
-        print("logprob",log_probs_old[:2], traj_info['log_pi_a'][:2], '\n',\
-                "action",actions[:2], "\n",\
-                "value",returns[:2], traj_info['v'][:2], '\n',\
-                "adv",advantages[:2])
+        # print("logprob",log_probs_old[:2], traj_info['log_pi_a'][:2], '\n',\
+        #         "action",actions[:2], "\n",\
+        #         "value",returns[:2], traj_info['v'][:2], '\n',\
+        #         "adv",advantages[:2])
 
 
         self.optimizer.zero_grad()
@@ -109,6 +111,24 @@ class PPOContinuousAgent:
     def act(self, state, action=None):
         return self.policy.act(state,action)
 
+def worker(procnum, qout, agent, states):
+    out = agent.act(states).values()
+    qout.put(obj=(procnum, out))
+    del out
+
+class Worker(mp.Process):
+    def __init__(self,agent, num_proc, state, res_queue):
+        super(Worker, self).__init__()
+        self.agent = agent
+        self.state = state
+        self.res_queue = res_queue
+        self.num_proc = num_proc
+        self.daemon = True
+
+    def run(self):
+        out = self.agent.act(self.state)
+        self.res_queue.put((self.num_proc, out))
+
 class vecAgents:
     def __init__(self, 
                  policy,
@@ -116,6 +136,8 @@ class vecAgents:
                  graph=None,
                  **kwargs):
         self.agents = [policy(**kwargs) for _ in range(nenvs)]
+        for agent in self.agents:
+            agent.policy.share_memory()
         self.graph = graph
         if graph is None:
             # Temporary fully connected networks
@@ -147,11 +169,18 @@ class vecAgents:
     def act(self, state, action=None):
         actions, logprobs, entropys, vs = [],[],[],[]
 
-        for i,p in enumerate(self.agents):
-            if action is None:
-                a,log_pi_a,ent,v = p.act(state[i:i+1]).values()
-            else:
-                a,log_pi_a,ent,v = p.act(state[i:i+1], action[i:i+1]).values()
+        qout = mp.Queue()
+        state.share_memory_()
+        workers = [Worker(agent.policy, i, state[i:i+1], qout) for i,agent in enumerate(self.agents)]
+        [w.start() for w in workers]
+        [w.join() for w in workers]
+        
+        unsorted_queue = [qout.get() for w in workers]
+        return_queue = [t[1] for t in sorted(unsorted_queue)]
+        del unsorted_queue
+
+        for i in range(len(self.agents)):
+            a,log_pi_a,ent,v = return_queue[i]
             actions.append(a)
             logprobs.append(log_pi_a)
             entropys.append(ent)

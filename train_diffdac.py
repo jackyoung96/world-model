@@ -13,6 +13,8 @@ import os
 from torchsummary import summary
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
+import time
+import torch.multiprocessing as mp
 
 def train(args):
     env_name, randomize = args.env, args.randomize
@@ -56,7 +58,7 @@ def train(args):
     elif "Pendulum" in env_name:
         goal_score = 180.0
 
-    nenvs = 25 # num of agents
+    nenvs = 2 # num of agents
     rollout_length = 200
     minibatches = 32
     # Calculate the batch_size
@@ -118,6 +120,8 @@ def train(args):
     scores_window = [deque(maxlen=100) for _ in range(nenvs)]
 
     for i_episode in range(args.epoch+1):
+        time_ckpt = [time.time()]
+
         log_probs_old, states, actions, rewards, values, dones, vals_last = collect_trajectories_multiagents(envs, agents, rollout_length)
 
         returns = np.zeros_like(rewards)
@@ -147,6 +151,8 @@ def train(args):
         advantages = torch.from_numpy(advantages).float().to(device)
         # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-10)
         
+        time_ckpt.append(time.time())
+
         loss_storage = [{'p':[], 'v':[], 'ent':[]} for _ in range(nenvs)]
         for _ in range(optimization_epochs):
             sampler = random_sample(nbatch, minibatches)
@@ -162,7 +168,13 @@ def train(args):
                     loss_storage[i]['p'].append(loss_p[i])
                     loss_storage[i]['v'].append(loss_v[i])
                     loss_storage[i]['ent'].append(loss_ent[i])
-                
+
+        time_ckpt.append(time.time()) 
+        print( "rollout time:",time_ckpt[1]-time_ckpt[0],'\n',
+                "update time:",time_ckpt[2]-time_ckpt[1])
+        print('------------------------')
+
+
         total_rewards = np.sum(rewards, axis=0) # reward per environment
         for i in range(nenvs):
             scores_window[i].append(total_rewards[i]) # last 100 scores
@@ -202,6 +214,7 @@ def train_stablebaseline():
 
 if __name__=='__main__':
     # train(1000, 'CartPole-v1')
+    mp.set_start_method('spawn')
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', required=True, choices=['CartPole-v0','CartPole-v1','Pendulum-v0'])
     parser.add_argument('--randomize',action='store_true', help="Domain randomize")

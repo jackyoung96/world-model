@@ -13,6 +13,7 @@ import os
 from torchsummary import summary
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
+import time
 
 def train(args):
     env_name, randomize = args.env, args.randomize
@@ -97,6 +98,7 @@ def train(args):
     scores_window = deque(maxlen=100)
 
     for i_episode in range(args.epoch+1):
+        time_ckpt = [time.time()]
         log_probs_old, states, actions, rewards, values, dones, vals_last = collect_trajectories(envs, agent, rollout_length)
         
         returns = np.zeros_like(rewards)
@@ -125,6 +127,8 @@ def train(args):
         returns = torch.from_numpy(returns).float().to(device).view(-1,)
         advantages = torch.from_numpy(advantages).float().to(device).view(-1,)
         # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-10)
+
+        time_ckpt.append(time.time())
         
         loss_storage = {'p':[], 'v':[], 'ent':[]}
         for _ in range(optimization_epochs):
@@ -140,6 +144,12 @@ def train(args):
                 loss_storage['p'].append(loss_p)
                 loss_storage['v'].append(loss_v)
                 loss_storage['ent'].append(loss_ent)
+
+        time_ckpt.append(time.time())
+
+        print( "rollout time:",time_ckpt[1]-time_ckpt[0],'\n',
+                "update time:",time_ckpt[2]-time_ckpt[1])
+        print('------------------------')
                 
         total_rewards = np.sum(rewards, axis=0)
         scores_window.append(np.mean(total_rewards)) # last 100 scores
