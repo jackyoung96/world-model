@@ -5,6 +5,10 @@ import numpy as np
 import gym
 from multiprocessing import Process, Pipe
 from abc import ABC, abstractmethod
+from .customEnvDrone import customAviary, domainRandomAviary
+from gym_pybullet_drones.envs.BaseAviary import DroneModel, Physics
+from gym_pybullet_drones.envs.single_agent_rl.BaseSingleAgentAviary import ActionType, ObservationType, BaseSingleAgentAviary
+import gym_pybullet_drones
 
 class CloudpickleWrapper(object):
     """
@@ -187,25 +191,37 @@ class parallelEnv(VecEnv):
 
 
 # Random physical properties env
-def domainRandomize(env,dyn_range=dict(),default_ratio=0.1):
+def domainRandomize(env,dyn_range=dict(),default_ratio=0.1,seed=None):
     def default_range(dyn, ratio):
         return [dyn*(1-ratio), dyn*(1+ratio)]
-    if isinstance(env, gym.envs.classic_control.cartpole.CartPoleEnv):
-        env.masscart = np.random.uniform(* (dyn_range.get('masscart',default_range(env.masscart,default_ratio))) ) 
-        env.masspole = np.random.uniform(* (dyn_range.get('masspole',default_range(env.masspole,default_ratio))) )
-        env.total_mass = env.masspole + env.masscart
-        env.length = np.random.uniform(* (dyn_range.get('length',default_range(env.length,default_ratio))) )  # actually half the pole's length
-        env.polemass_length = env.masspole * env.length
-        env.force_mag = np.random.uniform(* (dyn_range.get('force_mag',default_range(env.force_mag,default_ratio))) )
-    elif isinstance(env, gym.envs.classic_control.pendulum.PendulumEnv):
-        env.max_torque = np.random.uniform(* (dyn_range.get('max_torque',default_range(env.max_torque,default_ratio))) ) 
-        env.m = np.random.uniform(* (dyn_range.get('m',default_range(env.m,default_ratio))) ) 
-        env.l = np.random.uniform(* (dyn_range.get('l',default_range(env.l,default_ratio))) ) 
+    if seed is not None:
+        np.random.seed(seed)
+    env_name = env.env_name
+    if 'CartPole' in env_name:
+        # env.env.masscart = np.random.uniform(* (dyn_range.get('masscart',default_range(env.env.masscart,default_ratio))) ) 
+        env.env.masscart = np.random.uniform(*default_range(env.env.masscart,dyn_range.get('masscart',default_ratio))) 
+        # env.env.masspole = np.random.uniform(* (dyn_range.get('masspole',default_range(env.env.masspole,default_ratio))) )
+        env.env.masspole = np.random.uniform(*default_range(env.env.masspole,dyn_range.get('masspole',default_ratio))) 
+        env.env.total_mass = env.env.masspole + env.env.masscart
+        # env.env.length = np.random.uniform(* (dyn_range.get('length',default_range(env.env.length,default_ratio))) )  # actually half the pole's length
+        env.env.length = np.random.uniform(*default_range(env.env.length,dyn_range.get('length',default_ratio))) 
+        env.env.polemass_length = env.env.masspole * env.env.length
+        # env.env.force_mag = np.random.uniform(* (dyn_range.get('force_mag',default_range(env.env.force_mag,default_ratio))) )
+        env.env.force_mag = np.random.uniform(*default_range(env.env.force_mag,dyn_range.get('force_mag',default_ratio))) 
+    elif 'Pendulum' in env_name:
+        # env.env.max_torque = np.random.uniform(* (dyn_range.get('max_torque',default_range(env.env.max_torque,default_ratio))) ) 
+        env.env.max_torque = np.random.uniform(*default_range(env.env.max_torque,dyn_range.get('max_torque',default_ratio))) 
+        # env.env.m = np.random.uniform(* (dyn_range.get('m',default_range(env.env.m,default_ratio))) ) 
+        env.env.m = np.random.uniform(*default_range(env.env.m,dyn_range.get('m',default_ratio))) 
+        # env.env.l = np.random.uniform(* (dyn_range.get('l',default_range(env.env.l,default_ratio))) ) 
+        env.env.l = np.random.uniform(*default_range(env.env.l,dyn_range.get('l',default_ratio)))
+    elif 'aviary' in env_name:
+        env.random_urdf()
     else:
         raise NotImplementedError
 
 # multithreading 
-def workerDomainRand(remote, parent_remote, env_fn_wrapper, dyn_range, default_ratio):
+def workerDomainRand(remote, parent_remote, env_fn_wrapper, randomize, dyn_range, default_ratio, idx):
     parent_remote.close()
     env = env_fn_wrapper.x
     while True:
@@ -216,7 +232,8 @@ def workerDomainRand(remote, parent_remote, env_fn_wrapper, dyn_range, default_r
                 ob = env.reset()
             remote.send((ob, reward, done, info))
         elif cmd == 'reset':
-            domainRandomize(env.env,dyn_range,default_ratio)
+            if randomize:
+                domainRandomize(env, dyn_range,default_ratio, idx+np.random.randint(2147483647))
             ob = env.reset()
             remote.send(ob)
         elif cmd == 'close':
@@ -233,19 +250,53 @@ class domainRandeEnv(parallelEnv):
     '''
     def __init__(self, 
                 env_name='CartPole-v1',
-                n=4, seed=None,
+                tag='simple',
+                n=4, seed=0,
+                randomize=False, # True: domain randomize(=Randomize every reset)
                 dyn_range=None, # physical properties range
                 default_ratio=0.1
                 ):
         
         self.env_name = env_name
         self.default_ratio = default_ratio
-        env_fns = [ gym.make(env_name) for _ in range(n) ]
-        for env_fn in env_fns:
-            domainRandomize(env=env_fn.env, dyn_range=dyn_range, default_ratio=default_ratio)
-        if seed is not None:
-            for i,e in enumerate(env_fns):
-                e.seed(i+seed)
+        if not 'aviary' in env_name:
+            env_fns = [ gym.make(env_name) for _ in range(n) ]
+            for i, env_fn in enumerate(env_fns):
+                setattr(env_fn, 'env_name', env_name)
+                domainRandomize(env=env_fn, dyn_range=dyn_range, default_ratio=default_ratio, seed=i+seed)
+                env_fn.seed(i+seed)
+        else:
+            env_fns = []
+            for idx in range(n):
+                env = gym.make(id=env_name, # arbitrary environment that has state normalization and clipping
+                    drone_model=DroneModel.CF2X,
+                    initial_xyzs=np.array([[0.0,0.0,2.0]]),
+                    initial_rpys=np.array([[0.0,0.0,0.0]]),
+                    physics=Physics.PYB_GND_DRAG_DW,
+                    freq=240,
+                    aggregate_phy_steps=1,
+                    gui=False,
+                    record=False, 
+                    obs=ObservationType.KIN,
+                    act=ActionType.RPM)
+                env = domainRandomAviary(env, tag, idx, seed,
+                    observable=['pos', 'rotation', 'vel', 'angular_vel', 'rpm'],
+                    frame_stack=1,
+                    task='stabilize2',
+                    reward_coeff={'xyz':0.2, 'vel':0.016, 'ang_vel':0.08, 'd_action':0.002},
+                    episode_len_sec=2,
+                    max_rpm=66535,
+                    initial_xyz=[[0.0,0.0,50.0]], # Far from the ground
+                    freq=200,
+                    rpy_noise=1.2,
+                    vel_noise=1.0,
+                    angvel_noise=2.4,
+                    mass_range=dyn_range.get('mass_range', 0.0),
+                    cm_range=dyn_range.get('cm_range', 0.0),
+                    kf_range=dyn_range.get('kf_range', 0.0),
+                    km_range=dyn_range.get('km_range', 0.0))
+                setattr(env, 'env_name', env_name)
+                env_fns.append(env)
         
         """
         envs: list of gym environments to run in subprocesses
@@ -253,10 +304,10 @@ class domainRandeEnv(parallelEnv):
         """
         self.waiting = False
         self.closed = False
-        nenvs = len(env_fns)
-        self.remotes, self.work_remotes = zip(*[Pipe() for _ in range(nenvs)])
-        self.ps = [Process(target=workerDomainRand, args=(work_remote, remote, CloudpickleWrapper(env_fn),dyn_range,default_ratio))
-            for (work_remote, remote, env_fn) in zip(self.work_remotes, self.remotes, env_fns)]
+        self.nenvs = len(env_fns)
+        self.remotes, self.work_remotes = zip(*[Pipe() for _ in range(self.nenvs)])
+        self.ps = [Process(target=workerDomainRand, args=(work_remote, remote, CloudpickleWrapper(env_fn),randomize,dyn_range,default_ratio, idx))
+            for (work_remote, remote, env_fn, idx) in zip(self.work_remotes, self.remotes, env_fns, range(len(env_fns)))]
         for p in self.ps:
             p.daemon = True # if the main process crashes, we should not cause things to hang
             p.start()
@@ -267,15 +318,29 @@ class domainRandeEnv(parallelEnv):
         observation_space, action_space = self.remotes[0].recv()
         VecEnv.__init__(self, len(env_fns), observation_space, action_space)
 
+        self.env_step = 0
+        
+
+    def reset(self):
+        self.env_step = 0
+        return super().reset()
+
     def step(self, action):
         """
         Reward normalization
         """
+        self.env_step += 1
         if "CartPole" in self.env_name:
-            return super().step(action)
+            obs, reward, is_done, info = super().step(action)
+            reward = reward - np.clip(np.power(obs[:,0]/2.4,2),0,1)
+            return obs, reward, is_done, info
         elif "Pendulum" in self.env_name:
             obs, reward, is_done, info = super().step(action)
             reward = (reward + 8.1) / 8.1
+            return obs, reward, is_done, info
+        elif 'aviary' in self.env_name:
+            action = action.reshape((self.nenvs,-1))
+            obs, reward, is_done, info = super().step(action)
             return obs, reward, is_done, info
         else:
             raise NotImplementedError

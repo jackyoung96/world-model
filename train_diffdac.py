@@ -5,7 +5,7 @@ import torch
 
 from ppo import PPODiscreteAgent, PPOContinuousAgent, vecAgents
 from utils import collect_trajectories_multiagents, random_sample
-from customEnv import parallelEnv, domainRandeEnv
+from envs.customEnv import parallelEnv, domainRandeEnv
 import argparse
 import gym
 
@@ -38,8 +38,14 @@ def train(args):
             'max_torque': [1.4, 2.6], # original 2.0
             'm': [0.7, 1.3], # original 1.0
             'l': [0.7, 1.3], # original 1.0
+
+            # drones
+            'mass_range': 0.3,
+            'cm_range': 0.3,
+            'kf_range': 0.1,
+            'km_range': 0.1,
         }
-        default_ratio = 0.1
+        default_ratio = 0.3
     else:
         dyn_range = {}
         default_ratio = 0.0
@@ -51,25 +57,19 @@ def train(args):
     beta = 0.01
     cliprange = 0.2
     best_score = -np.inf
-    if "CartPole" in env_name:
-        goal_score = 195.0
-    elif "Pendulum" in env_name:
-        goal_score = 180.0
 
     nenvs = 25 # num of agents
-    rollout_length = 200
-    minibatches = 32
+    minibatches = 128
     # Calculate the batch_size
-    nbatch = rollout_length
     # nbatch = 128
     optimization_epochs = 10
     
     device=torch.device("cuda:%d"%args.gpu if torch.cuda.is_available() else "cpu")
     print("Device:",device)
     
-    envs = domainRandeEnv(env_name, nenvs, seed=1234, dyn_range=dyn_range,default_ratio=default_ratio)
+    envs = domainRandeEnv(env_name=env_name, tag='diffdac', randomize=False, n=nenvs, seed=1234, dyn_range=dyn_range, default_ratio=default_ratio)
 
-    if isinstance(envs.action_space, gym.spaces.Discrete):
+    if 'CartPole' in env_name:
         agents = vecAgents(policy = PPODiscreteAgent, 
                             nenvs=nenvs,
                             graph=None,
@@ -87,7 +87,10 @@ def train(args):
                             lr_policy=1e-4, 
                             use_reset=True,
                             device=device).policy
-    elif isinstance(envs.action_space, gym.spaces.Box):
+        rollout_length = 500
+        nbatch = rollout_length
+        epoch = 2000
+    elif 'Pendulum' in env_name:
         agents = vecAgents(policy = PPOContinuousAgent, 
                             nenvs=nenvs,
                             graph=None,
@@ -107,6 +110,32 @@ def train(args):
                             use_reset=False,
                             use_common=True,
                             device=device).policy
+        rollout_length = 200
+        nbatch = nenvs * rollout_length
+        epoch = 5000
+    elif 'aviary' in env_name:
+        agents = vecAgents(policy = PPOContinuousAgent, 
+                            nenvs=nenvs,
+                            graph=None,
+                            state_size=envs.observation_space.shape[0],
+                            action_size=envs.action_space.shape[0], 
+                            seed=0,
+                            hidden_layers=[64,256],
+                            lr_policy=2e-5, 
+                            use_reset=False,
+                            use_common=True,
+                            device=device)
+        consensus_policy = PPOContinuousAgent(state_size=envs.observation_space.shape[0],
+                            action_size=envs.action_space.shape[0], 
+                            seed=0,
+                            hidden_layers=[64,256],
+                            lr_policy=2e-5, 
+                            use_reset=False,
+                            use_common=True,
+                            device=device).policy
+        rollout_length = 400
+        nbatch = nenvs * rollout_length
+        epoch = 20000
     else:
         raise NotImplementedError
     # print("------------------")
@@ -117,7 +146,7 @@ def train(args):
     mean_rewards = []
     scores_window = [deque(maxlen=100) for _ in range(nenvs)]
 
-    for i_episode in range(args.epoch+1):
+    for i_episode in range(1,epoch+1):
         log_probs_old, states, actions, rewards, values, dones, vals_last = collect_trajectories_multiagents(envs, agents, rollout_length)
 
         returns = np.zeros_like(rewards)
@@ -187,7 +216,7 @@ def train(args):
 
             for consensus, *trained_policies in zip(consensus_policy.parameters(), *map(lambda x: x.policy.parameters(), agents.agents)):
                 consensus.data.copy_(sum([trained_policy.data/nenvs for j,trained_policy in enumerate(trained_policies)]))
-            torch.save(consensus_policy.state_dict(), "save/diffdac/policy_%s.pth"%env_name)
+            torch.save(consensus_policy.state_dict(), "save/diffdac/policy_%s_iter%05d.pth"%(env_name,i_episode))
 
         if np.mean(scores_window)>=best_score:  
             for consensus, *trained_policies in zip(consensus_policy.parameters(), *map(lambda x: x.policy.parameters(), agents.agents)):
@@ -203,10 +232,9 @@ def train_stablebaseline():
 if __name__=='__main__':
     # train(1000, 'CartPole-v1')
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env', required=True, choices=['CartPole-v0','CartPole-v1','Pendulum-v0'])
+    parser.add_argument('--env', required=True, choices=['CartPole-v0','CartPole-v1','Pendulum-v0','takeoff-aviary-v0'])
     parser.add_argument('--randomize',action='store_true', help="Domain randomize")
     parser.add_argument('--tb_log', action='store_true', help="Tensorboard logging")
-    parser.add_argument('--epoch', default='5000', type=int, help="Total epoch")
     parser.add_argument('--gpu', default='0', type=int, help="gpu number")
     args = parser.parse_args()
     train(args)

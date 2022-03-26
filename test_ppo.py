@@ -3,7 +3,7 @@ import torch
 import gym
 import matplotlib
 from matplotlib import animation, rc
-from customEnv import domainRandomize
+from envs.customEnv import domainRandomize
 import argparse
 import os
 from utils import save_frames_as_gif
@@ -18,10 +18,10 @@ def test(args):
         'masscart': [1.3,1.3], # original 1.0
         'masspole': [0.13, 0.13], # original 0.1
         'length': [0.65, 0.65], # original 0.5
-        'force_mag': [15.0, 15.0], # original 10.0
+        'force_mag': [8.0, 8.0], # original 10.0
 
         # pendulum
-        'max_torque': [2.6, 2.6], # original 2.0
+        'max_torque': [1.7, 1.7], # original 2.0
         'm': [1.3, 1.3], # original 1.0
         'l': [1.3, 1.3], # original 1.0
         }
@@ -47,7 +47,7 @@ def test(args):
         agent = PPOContinuousAgent(state_size=envs.observation_space.shape[0],
                         action_size=envs.action_space.shape[0], 
                         seed=0,
-                        hidden_layers=[128,128],
+                        hidden_layers=[64,256],
                         lr_policy=1e-4, 
                         use_reset=False,
                         use_common=True,
@@ -55,10 +55,10 @@ def test(args):
     else:
         raise NotImplementedError
     
-    if os.path.isfile('save/policy_%s_best.pth'%env_name):
-        agent.policy.load_state_dict(torch.load('save/policy_%s_best.pth'%env_name, map_location=lambda storage, loc: storage))
-    elif os.path.isfile('save/policy_%s.pth'%env_name):
-        agent.policy.load_state_dict(torch.load('save/policy_%s.pth'%env_name, map_location=lambda storage, loc: storage))
+    if os.path.isfile('save/ppo/policy_%s_best.pth'%env_name):
+        agent.policy.load_state_dict(torch.load('save/ppo/policy_%s_best.pth'%env_name, map_location=lambda storage, loc: storage))
+    elif os.path.isfile('save/ppo/policy_%s.pth'%env_name):
+        agent.policy.load_state_dict(torch.load('save/ppo/policy_%s.pth'%env_name, map_location=lambda storage, loc: storage))
     else:
         raise "No pth file exist"
 
@@ -88,14 +88,15 @@ def test(args):
                 break
 
     if args.record:
+        txt_random = 'T' if randomize else 'F'
         if not os.path.isdir("gif"):
             os.mkdir("gif")
         num = 0
         for file in os.listdir("gif"):
-            if args.env in file:
+            if args.env+"_"+txt_random in file:
                 num = max(num,int(file.strip(".gif").split("_")[-1]) + 1)
         
-        save_frames_as_gif(frames, path="gif", filename="%s_%03d.gif"%(args.env, num))
+        save_frames_as_gif(frames, path="gif", filename="ppo_%s_%s_%03d.gif"%(args.env, txt_random, num))
 
     envs.close()
 

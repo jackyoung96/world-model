@@ -4,6 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+from multiprocessing import Pool, Process, Manager
+
 from model import FCNet, ConvNet, PolicyContinuous, PolicyDiscrete
 
 class PPODiscreteAgent:

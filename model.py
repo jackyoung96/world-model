@@ -131,6 +131,7 @@ class PolicyContinuous(nn.Module):
         """
         super(PolicyContinuous, self).__init__()
         self.seed = torch.manual_seed(seed)
+        self.action_size = action_size
 
         self.main_net_actor = main_net1
         self.main_net_critic = main_net2
@@ -163,7 +164,10 @@ class PolicyContinuous(nn.Module):
         # else:
         #     print(state.shape)
         pi_a, v = self.forward(state)
-        dist = Normal(pi_a[0].view(-1,), pi_a[1].view(-1,))        
+        if self.action_size==1:
+            dist = Normal(pi_a[0].view(-1,), pi_a[1].view(-1,))   
+        else:
+            dist = Normal(pi_a[0].view(-1,self.action_size), pi_a[1].view(-1,self.action_size))      
         if action is None:
             action = dist.sample()
 

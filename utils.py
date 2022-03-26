@@ -12,7 +12,7 @@ def collect_trajectories(envs, agent, rollout_length=200):
     ======
     log_probs_old (tensor)   :  (rollout_length*n,)
     states (tensor)          :  (rollout_length*n, envs.observation_space.shape[0])
-    actions (tensor)         :  (rollout_length*n,)
+    actions (tensor)         :  (rollout_length*n, action_dim)
     rewards (list,np.array)  :  (rollout_length, n)  --> for advs
     values (list,np.array)   :  (rollout_length, n)  --> for advs
     dones (list,np.array)    :  (rollout_length, n)  --> for advs
@@ -46,12 +46,23 @@ def collect_trajectories(envs, agent, rollout_length=200):
         values.append(value)               # shape (rollout_length, n)
         dones.append(is_done)              # shape (rollout_length, n)
     
-    log_probs_old = torch.stack(log_probs_old).view(-1,)   
+    if isinstance(envs.action_space, gym.spaces.Box):
+        action_dim = envs.action_space.shape[0]
+    else:
+        action_dim = 1
+
+    if action_dim==1:
+        log_probs_old = torch.stack(log_probs_old).view(-1,)  
+    else:
+        log_probs_old = torch.stack(log_probs_old).view(-1,action_dim)  
     states = torch.stack(states)
     states = states.view(-1,envs.observation_space.shape[0])
     actions_numpy = np.concatenate([a[None,:] for a in actions], axis=0)
     if isinstance(envs.action_space, gym.spaces.Box):
-        actions = torch.tensor(actions_numpy, dtype=torch.float32, device=device).view(-1,)
+        if action_dim==1:
+            actions = torch.tensor(actions_numpy, dtype=torch.float32, device=device).view(-1,)
+        else:
+            actions = torch.tensor(actions_numpy, dtype=torch.float32, device=device).view(-1,action_dim)
     elif isinstance(envs.action_space, gym.spaces.Discrete):
         actions = torch.tensor(actions_numpy, dtype=torch.long, device=device).view(-1,)
 
@@ -104,11 +115,19 @@ def collect_trajectories_multiagents(envs, agents, rollout_length=200):
         values.append(value)               # shape (rollout_length, n)
         dones.append(is_done)              # shape (rollout_length, n)
     
+    if isinstance(envs.action_space, gym.spaces.Box):
+        action_dim = envs.action_space.shape[0]
+    else:
+        action_dim = 1
+
     log_probs_old = torch.stack(log_probs_old) 
     states = torch.stack(states)
     actions_numpy = np.concatenate([a[None,:] for a in actions], axis=0)
     if isinstance(envs.action_space, gym.spaces.Box):
-        actions = torch.tensor(actions_numpy, dtype=torch.float32, device=device).view(rollout_length,-1)
+        if action_dim == 1:
+            actions = torch.tensor(actions_numpy, dtype=torch.float32, device=device).view(rollout_length,-1,action_dim)
+        else:
+            actions = torch.tensor(actions_numpy, dtype=torch.float32, device=device).view(rollout_length,-1)
     elif isinstance(envs.action_space, gym.spaces.Discrete):
         actions = torch.tensor(actions_numpy, dtype=torch.long, device=device).view(rollout_length,-1)
 
